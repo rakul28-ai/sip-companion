@@ -4,7 +4,7 @@ const { KB, KB_IDS, kbById } = require('../lib/kb');
 const { restartDate, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
-const PROMPT_VERSION = 'qa-v3'; // v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty
+const PROMPT_VERSION = 'qa-v4'; // v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -70,6 +70,7 @@ Rules:
 - answerable = true only if the knowledge base directly answers the question. If it only partly or indirectly relates, answerable = false. Never guess.
 - answer: plain, calm English under 80 words. No recommendations, no predictions, no fund names, no percentages, no fear, urgency or loss framing. Do not tell the user what to do; explain how the options work.
 - Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
+- State only what the sources say. Do not add your own inferences or conclusions.
 - Keep every qualifier the source gives. If a source says something is one provider's practice, typical, or may happen, say so (for example "one platform also counts skipped instalments"), never state it as a general rule.
 - citations: the knowledge base IDs that support every statement in the answer.`;
 
@@ -91,7 +92,9 @@ const QA_TOOL = {
 
 const JUDGE_SYSTEM = `You are a strict reviewer. You get an answer and the source texts it cites.
 supported = true only if every factual statement in the answer is directly supported by the cited sources.
-supported = false if the answer states something more certainly or more generally than the source does, for example dropping words like "typically", "may" or "one provider".
+Judge only the statements the answer makes. Leaving information out is never a reason to fail, and naming or not naming a source does not matter.
+supported = false only if a statement (a) contradicts the sources, (b) adds a fact or inference the sources do not contain, or (c) turns something the source presents as one provider's practice into a general rule.
+Small paraphrases with the same meaning are supported.
 Each source starts with its title, which names the publisher. Naming that publisher in the answer counts as supported.
 gives_advice = true if the answer recommends any action, fund, amount or timing, or predicts returns.
 pressure_language = true if the answer uses fear, regret, loss framing, missing out or urgency.`;
