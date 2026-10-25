@@ -130,7 +130,7 @@ const PLAN_TOOL = {
 const sources = ids => ids.map(id => kbById(id)).filter(Boolean).map(k => ({ id: k.id, title: k.title, url: k.url, status: k.status }));
 const fallback = (kind, checks) => ({ type: 'fallback', kind, text: FALLBACK[kind], link: HELP_URL, checks });
 
-async function handleQA(message) {
+async function handleQA(message, debug = false) {
   const checks = { G1: 'skipped', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'pass', G6: 'skipped' };
   const qa = await callTool(QA_SYSTEM, `<question>${message}</question>`, QA_TOOL, 500);
 
@@ -138,22 +138,28 @@ async function handleQA(message) {
   checks.G3 = 'pending';
   if (!qa.in_scope) { checks.G6 = 'fail'; return fallback('scope', checks); }
   checks.G6 = 'pass';
-  if (!qa.answerable) { checks.G2 = 'fail'; return fallback('unsure', checks); }
+  // Eval tracing: when debug is on, attach the rejected draft and the reason so failures can be diagnosed.
+  const trace = extra => debug ? { draft: qa.answer, draft_citations: qa.citations || [], ...extra } : undefined;
+  const fb = (kind, extra) => { const f = fallback(kind, checks); const t = trace(extra); if (t) f.trace = t; return f; };
+  if (!qa.answerable) { checks.G2 = 'fail'; return fb('unsure', { stopped_at: 'model said not answerable' }); }
 
   const cites = [...new Set(qa.citations || [])];
-  if (!cites.length || cites.some(c => !KB_IDS.includes(c))) { checks.G1 = 'fail'; return fallback('unsure', checks); }
+  if (!cites.length || cites.some(c => !KB_IDS.includes(c))) { checks.G1 = 'fail'; return fb('unsure', { stopped_at: 'no valid citation' }); }
   checks.G1 = 'pass';
-  if (hasPII(qa.answer)) { checks.G5 = 'fail'; return fallback('privacy', checks); }
-  if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fallback('advice', checks); }
-  if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fallback('unsure', checks); }
+  if (hasPII(qa.answer)) { checks.G5 = 'fail'; return fb('privacy', { stopped_at: 'PII in answer' }); }
+  if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fb('advice', { stopped_at: 'advice words in answer' }); }
+  if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fb('unsure', { stopped_at: 'pressure words in answer' }); }
 
   const cited = cites.map(id => `[${id}] ${kbById(id).text}`).join('\n\n');
   const j = await callTool(JUDGE_SYSTEM, `<answer>${qa.answer}</answer>\n<sources>\n${cited}\n</sources>`, JUDGE_TOOL, 300);
   checks.G2 = j.supported ? 'pass' : 'fail';
   checks.G3 = j.gives_advice ? 'fail' : 'pass';
   checks.G4 = j.pressure_language ? 'fail' : 'pass';
-  if (j.gives_advice) return fallback('advice', checks);
-  if (!j.supported || j.pressure_language) return fallback('unsure', checks);
+  if (j.gives_advice || !j.supported || j.pressure_language) {
+    console.log('judge_reject', JSON.stringify({ q: message, draft: qa.answer, cites, reason: j.reason }));
+  }
+  if (j.gives_advice) return fb('advice', { stopped_at: 'judge: gives advice', judge_reason: j.reason });
+  if (!j.supported || j.pressure_language) return fb('unsure', { stopped_at: j.supported ? 'judge: pressure language' : 'judge: not supported by sources', judge_reason: j.reason });
 
   return { type: 'answer', text: qa.answer, citations: sources(cites), checks };
 }
@@ -189,6 +195,7 @@ module.exports = async (req, res) => {
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   const mode = body && body.mode === 'plan' ? 'plan' : 'qa';
   const message = String((body && body.message) || '').trim();
+  const debug = !!(body && body.debug === true);
   if (!message) { res.status(400).json({ error: 'Empty message' }); return; }
   if (message.length > MAX_INPUT) { res.status(400).json({ error: `Please keep it under ${MAX_INPUT} characters.` }); return; }
 
@@ -199,7 +206,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const out = mode === 'plan' ? await handlePlan(message) : await handleQA(message);
+    const out = mode === 'plan' ? await handlePlan(message) : await handleQA(message, debug);
     res.status(200).json(out);
   } catch (e) {
     console.error(e.message, e.detail || '');
