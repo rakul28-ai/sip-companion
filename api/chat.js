@@ -4,6 +4,7 @@ const { KB, KB_IDS, kbById } = require('../lib/kb');
 const { restartDate, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
+const PROMPT_VERSION = 'qa-v2'; // v2: judge sees source titles; answer must not name sources
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -68,6 +69,7 @@ Rules:
 - advice_request = true if the user asks what they should do (continue, stop, which fund, how much, whether returns will be good), or asks for predictions.
 - answerable = true only if the knowledge base directly answers the question. If it only partly or indirectly relates, answerable = false. Never guess.
 - answer: plain, calm English under 80 words. No recommendations, no predictions, no fund names, no percentages, no fear, urgency or loss framing. Do not tell the user what to do; explain how the options work.
+- Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
 - citations: the knowledge base IDs that support every statement in the answer.`;
 
 const QA_TOOL = {
