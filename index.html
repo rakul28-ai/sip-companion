@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tight-Month Companion</title>
+<meta name="description" content="Concept prototype: helping first-time SIP investors through a tight month without losing their investing habit.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+  <aside class="side">
+    <p class="eyebrow">Concept prototype</p>
+    <h1>Tight-Month Companion</h1>
+    <p class="lede">Helps first-time SIP investors get through a tight month without a failed payment, and actually come back after a pause.</p>
+    <div class="note">
+      <b>Please read:</b> an independent student project (NextLeap PM Fellowship), not affiliated with or endorsed by Groww. SIP actions here are simulated; nothing is invested or changed. The assistant gives information only, not investment advice.
+    </div>
+    <h2>Try a scenario</h2>
+    <div class="scenarios">
+      <button class="scenario" data-go="reminder"><span>1</span> Three days before the SIP date</button>
+      <button class="scenario" data-go="detail"><span>2</span> About to stop a SIP</button>
+      <button class="scenario" data-go="restart"><span>3</span> Restart day</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="annotToggle"> Show annotations (what changed vs the current app)</label>
+    <p class="small">Assistant quality is tested on a 20-case golden set: <a href="eval.html">run the evaluation</a>.</p>
+  </aside>
+
+  <main class="phone-wrap">
+    <div class="phone" id="phone">
+      <div class="statusbar"><span id="clock">9:41</span><span>●●● ▲ ▮</span></div>
+      <div class="screen" id="screen"></div>
+      <div class="sheet-backdrop" id="backdrop" hidden></div>
+      <div class="sheet" id="sheet" hidden></div>
+      <div class="toast" id="toast" hidden></div>
+
+      <section class="assistant" id="assistant" hidden aria-label="SIP assistant">
+        <header class="a-head">
+          <button class="icon-btn" id="aClose" aria-label="Close">←</button>
+          <div>
+            <div class="a-title" id="aTitle">SIP assistant</div>
+            <div class="a-sub">Information only, not investment advice</div>
+          </div>
+        </header>
+        <div class="a-body" id="aBody"></div>
+        <form class="a-input" id="aForm">
+          <input id="aText" type="text" maxlength="500" autocomplete="off" placeholder="Ask about skipping, pausing or restarting">
+          <button type="submit" class="send" aria-label="Send">➤</button>
+        </form>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

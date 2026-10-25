@@ -1,0 +1,309 @@
+(function () {
+  'use strict';
+
+  // ---------- simulated state (nothing real is invested or changed) ----------
+  const SIP = { fund: 'Flexi Cap Fund (example)', amount: 2000, day: 5, min: 500 };
+  const state = { skipsInRow: 0, plan: null, postpones: 0, stopped: false, planTries: 0, msgCount: 0 };
+  const MAX_MSGS = 25;
+
+  const $ = s => document.querySelector(s);
+  const screen = $('#screen'), sheet = $('#sheet'), backdrop = $('#backdrop'), toastEl = $('#toast');
+  const fmtINR = n => '₹' + Number(n).toLocaleString('en-IN');
+  const fmtDate = d => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function nextSipDate(from = new Date()) {
+    const t = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    let d = new Date(t.getFullYear(), t.getMonth(), SIP.day);
+    if (d <= t) d = new Date(t.getFullYear(), t.getMonth() + 1, SIP.day);
+    return d;
+  }
+  const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
+  const monthName = d => d.toLocaleDateString('en-IN', { month: 'long' });
+
+  function annot(n, text) { return `<div class="annot"><b>${n}.</b> ${text}</div>`; }
+
+  // ---------- sheet and toast ----------
+  function openSheet(html) { sheet.innerHTML = html; sheet.hidden = false; backdrop.hidden = false; }
+  function closeSheet() { sheet.hidden = true; backdrop.hidden = true; sheet.innerHTML = ''; }
+  backdrop.addEventListener('click', closeSheet);
+  let toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, 3200);
+  }
+
+  // ---------- screens ----------
+  function home() {
+    const due = nextSipDate();
+    screen.innerHTML = `
+      <div class="topbar"><h3>My SIPs</h3></div>
+      <div class="card">
+        <div class="row"><div><div style="font-weight:600">${SIP.fund}</div><div class="muted">Monthly on the ${SIP.day}th</div></div>
+        <span class="pill">${state.stopped ? 'Stopped' : state.plan ? 'Paused' : 'Active'}</span></div>
+        <div class="row" style="margin-top:10px"><span class="amount">${fmtINR(SIP.amount)}</span><span class="muted">Next: ${state.stopped ? '-' : fmtDate(due)}</span></div>
+        <button class="btn" data-go="detail">View SIP</button>
+      </div>
+      <p class="muted" style="font-size:13px">Use the scenario buttons to walk through the three moments this concept covers.</p>`;
+  }
+
+  function reminder() {
+    const due = nextSipDate();
+    const blocked = state.skipsInRow >= 2;
+    screen.innerHTML = `
+      <div class="notif">
+        <div class="app">SIP reminder · now</div>
+        <div><b>Your SIP of ${fmtINR(SIP.amount)} goes out on ${fmtDate(due)}.</b></div>
+        <div class="muted" style="font-size:13.5px">If this month is tight, you can skip just this month or lower the amount.</div>
+      </div>
+      ${annot(1, 'New: a reminder 3 days before the debit. Today there is no heads-up, so a tight month can turn into a failed payment (P1, P6).')}
+      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">←</button><h3>Upcoming instalment</h3></div>
+      <div class="card">
+        <div class="muted">${SIP.fund}</div>
+        <div class="row" style="margin:6px 0 4px"><span class="amount">${fmtINR(SIP.amount)}</span><span>${fmtDate(due)}</span></div>
+        <p style="margin:8px 0 2px">If this month is tight, you can skip just this month or lower the amount. Your SIP continues as usual after that.</p>
+        ${annot(2, 'Skip already exists in the app, but is buried under My SIPs, Edit SIP. Here it is offered at the moment it is needed (P2 and the researcher did not know it existed).')}
+        <button class="btn primary" id="keep">Keep as planned</button>
+        <div class="btn-grid" style="margin-top:8px">
+          <button class="btn" id="skip" ${blocked ? 'disabled' : ''}>Skip this month</button>
+          <button class="btn" id="lower">Lower this month</button>
+        </div>
+        ${blocked ? `<p class="src">You've skipped the last 2 months. Under SEBI rules a monthly SIP can be cancelled after 3 consecutive missed instalments, so skipping is turned off here. You can still lower the amount, or plan a restart from the SIP page.</p>` : ''}
+        ${annot(3, 'Guardrail: Skip is hidden after 2 skips in a row and the 3-instalment rule is explained instead, so the nudge cannot cause accidental cancellation.')}
+        <button class="btn" id="ask">Ask a question</button>
+      </div>`;
+    $('#keep').onclick = () => toast('All set. Your SIP goes out as planned.');
+    $('#lower').onclick = () => lowerSheet(due);
+    $('#ask').onclick = () => openAssistant('qa');
+    const sk = $('#skip'); if (sk) sk.onclick = () => skipSheet(due);
+  }
+
+  function skipSheet(due) {
+    const next = addMonths(due, 1);
+    openSheet(`
+      <h4>Skip the ${monthName(due)} instalment?</h4>
+      <p class="muted">Only ${monthName(due)} is skipped. Your SIP continues automatically from ${fmtDate(next)}.</p>
+      <p class="src">Source: <a href="https://groww.in/help/mutual-funds/order/can-i-pause-sip-for-next-month" target="_blank" rel="noopener">Groww Help, skip an instalment</a></p>
+      <button class="btn primary" id="skipYes">Skip ${monthName(due)}</button>
+      <button class="btn" id="skipNo">Cancel</button>`);
+    $('#skipYes').onclick = () => { state.skipsInRow++; closeSheet(); toast(`${monthName(due)} skipped. Next instalment ${fmtDate(next)}. (Simulated)`); reminder(); };
+    $('#skipNo').onclick = closeSheet;
+  }
+
+  function lowerSheet(due) {
+    openSheet(`
+      <h4>Lower the ${monthName(due)} amount</h4>
+      <p class="muted">This change applies to ${monthName(due)} only. From next month your SIP goes back to ${fmtINR(SIP.amount)}.</p>
+      <input type="number" id="amt" min="${SIP.min}" max="${SIP.amount}" step="100" value="1000" aria-label="Amount for this month">
+      <p class="src" id="amtMsg">Minimum ${fmtINR(SIP.min)} (example scheme minimum).</p>
+      <button class="btn primary" id="amtYes">Confirm</button>
+      <button class="btn" id="amtNo">Cancel</button>`);
+    $('#amtYes').onclick = () => {
+      const v = Number($('#amt').value);
+      if (!v || v < SIP.min || v >= SIP.amount) { $('#amtMsg').textContent = `Enter an amount from ${fmtINR(SIP.min)} to ${fmtINR(SIP.amount - 100)}.`; return; }
+      state.skipsInRow = 0; closeSheet(); toast(`${monthName(due)}: ${fmtINR(v)}. Back to ${fmtINR(SIP.amount)} next month. (Simulated)`);
+    };
+    $('#amtNo').onclick = closeSheet;
+  }
+
+  function detail() {
+    screen.innerHTML = `
+      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">←</button><h3>SIP details</h3></div>
+      <div class="card">
+        <div style="font-weight:600">${SIP.fund}</div>
+        <div class="list-item"><span class="muted">Amount</span><span>${fmtINR(SIP.amount)}</span></div>
+        <div class="list-item"><span class="muted">Date</span><span>${SIP.day}th of every month</span></div>
+        <div class="list-item"><span class="muted">Status</span><span>${state.stopped ? 'Stopped' : state.plan ? 'Paused, restart planned' : 'Active'}</span></div>
+      </div>
+      <button class="btn" id="edit">Edit SIP</button>
+      <button class="btn" id="stop" ${state.stopped ? 'disabled' : ''}>Stop SIP</button>
+      ${annot(4, 'Unchanged entry point. The change happens after tapping Stop SIP.')}`;
+    $('#edit').onclick = () => toast('Edit amount and date: existing feature, not part of this concept.');
+    const st = $('#stop'); if (st) st.onclick = stopSheet;
+  }
+
+  function stopSheet() {
+    const due = nextSipDate();
+    openSheet(`
+      <h4>Before you stop</h4>
+      <p>If this is a tight patch, you can pause and choose when to restart. Units you already hold stay invested either way.</p>
+      <p class="src">Source: <a href="https://www.edelweissmf.com/investor-insights/mutual-fund-investment-tips-and-articles/how-to-stop-or-pause-an-sip" target="_blank" rel="noopener">Edelweiss MF, stopping or pausing a SIP</a></p>
+      ${annot(5, 'New sheet. Today Stop SIP goes straight to confirmation, and a "temporary" stop often becomes permanent (P2, P4). All three options have equal weight: Stop is never hidden.')}
+      <button class="btn equal" id="planBtn">Pause and plan a restart</button>
+      <button class="btn equal" id="skipBtn" ${state.skipsInRow >= 2 ? 'disabled' : ''}>Skip just this month</button>
+      <button class="btn equal" id="stopBtn">Stop SIP</button>`);
+    $('#planBtn').onclick = () => { closeSheet(); openAssistant('plan'); };
+    const sb = $('#skipBtn'); if (sb) sb.onclick = () => { closeSheet(); skipSheet(due); };
+    $('#stopBtn').onclick = () => {
+      state.stopped = true; closeSheet();
+      toast('SIP stopped. Units you hold stay invested. (Simulated)'); detail();
+    };
+  }
+
+  function restart() {
+    const amt = SIP.amount;
+    const planned = state.plan ? new Date(state.plan.date) : new Date();
+    screen.innerHTML = `
+      <div class="notif">
+        <div class="app">SIP reminder · today</div>
+        <div><b>You planned to restart your SIP today.</b></div>
+        <div class="muted" style="font-size:13.5px">${SIP.fund} · planned ${fmtDate(planned)}</div>
+      </div>
+      ${annot(6, 'New: the restart has a date and a one-tap action, instead of an open-ended "next month" that keeps sliding (P2, P4).')}
+      <div class="card">
+        <p style="margin-top:0">Restart with one tap?</p>
+        <button class="btn primary" id="rs">Restart at ${fmtINR(amt)}</button>
+        <div class="btn-grid" style="margin-top:8px">
+          <button class="btn" id="rsSmall">Restart smaller</button>
+          <button class="btn" id="rsMove">Move the date</button>
+        </div>
+        <button class="btn" id="rsNot">Not now</button>
+        <p class="src">${state.postpones >= 2 ? "You've moved this twice, so no more reminders will be sent unless you set a new date." : 'Restarting after a stop sets up a new SIP with the same fund and amount. You can change both.'}</p>
+        ${annot(7, 'Guardrail: after 2 postponements reminders stop, so it never turns into nagging.')}
+      </div>`;
+    $('#rs').onclick = () => { state.stopped = false; state.plan = null; state.skipsInRow = 0; toast(`SIP restarted at ${fmtINR(amt)}. (Simulated)`); };
+    $('#rsSmall').onclick = () => lowerRestart();
+    $('#rsMove').onclick = () => moveDate();
+    $('#rsNot').onclick = () => { state.postpones++; moveDate(true); };
+  }
+
+  function lowerRestart() {
+    openSheet(`
+      <h4>Restart at a smaller amount</h4>
+      <input type="number" id="ramt" min="${SIP.min}" step="100" value="1000" aria-label="Restart amount">
+      <p class="src" id="ramtMsg">Minimum ${fmtINR(SIP.min)} (example scheme minimum).</p>
+      <button class="btn primary" id="ramtYes">Restart</button>
+      <button class="btn" id="ramtNo">Cancel</button>`);
+    $('#ramtYes').onclick = () => {
+      const v = Number($('#ramt').value);
+      if (!v || v < SIP.min) { $('#ramtMsg').textContent = `Minimum is ${fmtINR(SIP.min)}.`; return; }
+      state.stopped = false; state.plan = null; closeSheet(); toast(`SIP restarted at ${fmtINR(v)}. (Simulated)`);
+    };
+    $('#ramtNo').onclick = closeSheet;
+  }
+
+  function moveDate(fromNotNow) {
+    const min = new Date(); min.setDate(min.getDate() + 1);
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    openSheet(`
+      <h4>${fromNotNow ? 'When would suit you?' : 'Pick a new restart date'}</h4>
+      <input type="date" id="nd" min="${iso(min)}" value="${iso(addMonths(min, 1))}">
+      <button class="btn primary" id="ndYes">Save date</button>
+      <button class="btn" id="ndNo">Cancel</button>`);
+    $('#ndYes').onclick = () => {
+      const v = $('#nd').value; if (!v) return;
+      state.plan = { date: v + 'T00:00:00' }; closeSheet();
+      toast(`Restart planned for ${fmtDate(new Date(v + 'T00:00:00'))}. (Simulated)`); restart();
+    };
+    $('#ndNo').onclick = closeSheet;
+  }
+
+  // ---------- assistant ----------
+  const panel = $('#assistant'), aBody = $('#aBody'), aForm = $('#aForm'), aText = $('#aText');
+  let mode = 'qa';
+
+  function openAssistant(m) {
+    mode = m; aBody.innerHTML = ''; state.planTries = 0;
+    $('#aTitle').textContent = m === 'plan' ? 'Plan your restart' : 'SIP assistant';
+    panel.hidden = false;
+    if (m === 'plan') {
+      bot(`Pausing can help through a tight month. Let's pick a realistic restart date.<br><br><b>When does your salary or income usually arrive each month?</b>`);
+      aText.placeholder = 'For example: salary comes on the 1st';
+    } else {
+      bot(`Ask me how skipping, pausing, stopping or restarting a SIP works. I answer only from official and cited sources, and I can't give investment advice.`);
+      const chips = ['What happens to my units if I stop?', 'How do I skip this month?', 'What if my SIP payment fails?'];
+      const c = document.createElement('div'); c.className = 'chips';
+      chips.forEach(t => { const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
+      aBody.appendChild(c);
+      aText.placeholder = 'Ask about skipping, pausing or restarting';
+    }
+    aText.focus();
+  }
+  $('#aClose').onclick = () => { panel.hidden = true; };
+
+  function bot(html, cls = '') {
+    const d = document.createElement('div'); d.className = 'msg bot ' + cls; d.innerHTML = html;
+    aBody.appendChild(d); aBody.scrollTop = aBody.scrollHeight; return d;
+  }
+  function user(text) {
+    const d = document.createElement('div'); d.className = 'msg user'; d.textContent = text;
+    aBody.appendChild(d); aBody.scrollTop = aBody.scrollHeight;
+  }
+
+  function loadCount() { try { return Number(sessionStorage.getItem('msgCount') || 0); } catch { return state.msgCount; } }
+  function saveCount(n) { state.msgCount = n; try { sessionStorage.setItem('msgCount', String(n)); } catch { /* storage unavailable */ } }
+
+  aForm.addEventListener('submit', e => { e.preventDefault(); const t = aText.value.trim(); if (t) send(t); });
+
+  async function send(text) {
+    aText.value = '';
+    user(text);
+    const n = loadCount();
+    if (n >= MAX_MSGS) { bot('This demo allows ' + MAX_MSGS + ' messages per visit. Thanks for trying it.', 'fallback'); return; }
+    saveCount(n + 1);
+    const typing = bot('<span class="typing">Checking sources…</span>');
+    let data;
+    try {
+      const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, message: text }) });
+      data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Request failed');
+    } catch (err) {
+      typing.remove();
+      bot(`Sorry, I couldn't reach the assistant just now. ${esc(err.message || '')}`, 'fallback');
+      return;
+    }
+    typing.remove();
+    render(data);
+  }
+
+  function render(d) {
+    if (d.type === 'answer') {
+      const cites = (d.citations || []).map(c => `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}${c.status === 'secondary' ? ' (secondary)' : ''}</a>`).join('');
+      bot(`${esc(d.text)}<div class="cites">${cites}</div><div class="checked">✓ Checked: sourced · not advice · no pressure</div>`);
+    } else if (d.type === 'fallback') {
+      bot(`${esc(d.text)}${d.link ? `<div class="cites"><a href="${esc(d.link)}" target="_blank" rel="noopener">Official help</a></div>` : ''}`, 'fallback');
+    } else if (d.type === 'clarify') {
+      state.planTries++;
+      if (state.planTries >= 2) { datePicker('No problem. Pick a restart date that works for you:'); return; }
+      bot(esc(d.text));
+    } else if (d.type === 'plan') {
+      const m = bot(`${esc(d.text)}<div class="src">How this date is chosen: ${esc(d.rule)}. The assistant only reads your payday; the date is calculated by a fixed rule.</div><div class="actions"><button class="btn primary" type="button">Yes, plan it</button><button class="btn" type="button">Pick another date</button></div>`);
+      const [yes, other] = m.querySelectorAll('button');
+      yes.onclick = () => savePlan(d.date_iso);
+      other.onclick = () => datePicker('Pick a restart date:');
+    }
+  }
+
+  function datePicker(label) {
+    const min = new Date(); min.setDate(min.getDate() + 1);
+    const iso = `${min.getFullYear()}-${String(min.getMonth() + 1).padStart(2, '0')}-${String(min.getDate()).padStart(2, '0')}`;
+    const m = bot(`${esc(label)}<input type="date" min="${iso}"><div class="actions"><button class="btn primary" type="button">Save</button></div>`);
+    m.querySelector('button').onclick = () => { const v = m.querySelector('input').value; if (v) savePlan(v); };
+  }
+
+  function savePlan(dateIso) {
+    const date = new Date(dateIso + 'T00:00:00');
+    let skipsNeeded = 0, d = nextSipDate();
+    while (d < date) { skipsNeeded++; d = addMonths(d, 1); }
+    state.plan = { date: dateIso + 'T00:00:00' };
+    const total = skipsNeeded + state.skipsInRow;
+    const how = total <= 2
+      ? (skipsNeeded === 0 ? `No instalment is due before then, so nothing changes until ${fmtDate(date)}.`
+                           : `Your SIP will skip ${skipsNeeded === 1 ? 'the next instalment' : 'the next 2 instalments'} and continue automatically from then.`)
+      : `That would mean ${total} missed instalments in a row, and skipping 3 in a row can cancel a SIP. So your SIP will be stopped now (units stay invested) and a one-tap restart with the same fund and amount will be ready on ${fmtDate(date)}.`;
+    bot(`<b>Restart planned for ${fmtDate(date)}.</b> ${how} We'll remind you that day.<div class="src">(Simulated)</div><div class="actions"><button class="btn" type="button">See restart day</button></div>`)
+      .querySelector('button').onclick = () => { panel.hidden = true; restart(); };
+  }
+
+  // ---------- routing ----------
+  const routes = { home, reminder, detail, restart };
+  document.addEventListener('click', e => {
+    const g = e.target.closest('[data-go]'); if (!g) return;
+    panel.hidden = true; closeSheet();
+    (routes[g.dataset.go] || home)();
+    document.getElementById('phone').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  $('#annotToggle').addEventListener('change', e => document.body.classList.toggle('show-annot', e.target.checked));
+  const now = new Date(); $('#clock').textContent = now.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }).replace(/\s?[ap]m/i, '');
+  home();
+})();

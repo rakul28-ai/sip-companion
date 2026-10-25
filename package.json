@@ -1,0 +1,7 @@
+{
+  "name": "sip-companion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Concept prototype: Tight-Month Companion for first-time SIP investors (student project, not affiliated with Groww).",
+  "engines": { "node": ">=18" }
+}
