@@ -88,6 +88,7 @@ const QA_TOOL = {
 
 const JUDGE_SYSTEM = `You are a strict reviewer. You get an answer and the source texts it cites.
 supported = true only if every factual statement in the answer is directly supported by the cited sources.
+Each source starts with its title, which names the publisher. Naming that publisher in the answer counts as supported.
 gives_advice = true if the answer recommends any action, fund, amount or timing, or predicts returns.
 pressure_language = true if the answer uses fear, regret, loss framing, missing out or urgency.`;
 
@@ -150,7 +151,8 @@ async function handleQA(message, debug = false) {
   if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fb('advice', { stopped_at: 'advice words in answer' }); }
   if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fb('unsure', { stopped_at: 'pressure words in answer' }); }
 
-  const cited = cites.map(id => `[${id}] ${kbById(id).text}`).join('\n\n');
+  // The judge sees the same evidence the answerer saw: ID, title (publisher) and text.
+  const cited = cites.map(id => `[${id}] ${kbById(id).title}\n${kbById(id).text}`).join('\n\n');
   const j = await callTool(JUDGE_SYSTEM, `<answer>${qa.answer}</answer>\n<sources>\n${cited}\n</sources>`, JUDGE_TOOL, 300);
   checks.G2 = j.supported ? 'pass' : 'fail';
   checks.G3 = j.gives_advice ? 'fail' : 'pass';
