@@ -107,15 +107,15 @@ document.getElementById('run').onclick = async () => {
     tbody.appendChild(tr);
     let d;
     try {
-      const r = await fetch('/api/chat', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({mode:c.mode, message:c.q})});
+      const r = await fetch('/api/chat', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({mode:c.mode, message:c.q, debug:true})});
       d = await r.json();
       if (!r.ok) d = {type:'error', text: d.error || ('HTTP ' + r.status)};
     } catch (e) { d = {type:'error', text: e.message}; }
     const j = judge(c, d);
-    results.push({...c, ...j, text: d.text || '', checks: d.checks ? JSON.stringify(d.checks) : ''});
+    results.push({...c, ...j, text: d.text || '', checks: d.checks ? JSON.stringify(d.checks) : '', stopped_at: (d.trace && d.trace.stopped_at) || '', draft: (d.trace && d.trace.draft) || '', judge_reason: (d.trace && d.trace.judge_reason) || ''});
     tr.innerHTML = `<td>${c.n}</td><td>${c.g}</td><td>${esc(c.q)}</td><td>${c.expect}${c.cite ? '<br>' + c.cite.map(x => `<span class="tag">${x}</span>`).join('') : ''}</td>
       <td>${esc(j.got)}${j.cites.length ? '<br>' + j.cites.map(x => `<span class="tag">${x}</span>`).join('') : ''}</td>
-      <td>${esc(d.text)}</td>
+      <td>${esc(d.text)}${d.trace ? '<br><span style="color:var(--muted);font-size:12.5px">Stopped at: ' + esc(d.trace.stopped_at) + (d.trace.draft ? '<br>Rejected draft: ' + esc(d.trace.draft) : '') + (d.trace.judge_reason ? '<br>Judge: ' + esc(d.trace.judge_reason) : '') + '</span>' : ''}</td>
       <td class="${j.pass ? 'pass' : 'fail'}">${j.pass ? 'Pass' : 'Fail'}${j.why ? '<br><span style="font-weight:400;color:var(--muted)">' + esc(j.why) + '</span>' : ''}</td>`;
   }
   summarise(); btn.disabled = false; document.getElementById('csv').disabled = false;
@@ -141,9 +141,9 @@ function summarise() {
 }
 
 document.getElementById('csv').onclick = () => {
-  const head = ['n','group','input','expected','got','citations','pass','reason','response','checks'];
+  const head = ['n','group','input','expected','got','citations','pass','reason','response','checks','stopped_at','rejected_draft','judge_reason'];
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const lines = [head.join(',')].concat(results.map(r => [r.n, r.g, r.q, r.expect, r.got, r.cites.join(' '), r.pass, r.why, r.text, r.checks].map(q).join(',')));
+  const lines = [head.join(',')].concat(results.map(r => [r.n, r.g, r.q, r.expect, r.got, r.cites.join(' '), r.pass, r.why, r.text, r.checks, r.stopped_at, r.draft, r.judge_reason].map(q).join(',')));
   const blob = new Blob([lines.join('\n')], {type:'text/csv'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'assistant_golden_results.csv'; a.click();
 };
