@@ -4,7 +4,6 @@ const { KB, KB_IDS, kbById } = require('../lib/kb');
 const { restartDate, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
-const PROMPT_VERSION = 'qa-v4'; // v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -69,9 +68,6 @@ Rules:
 - advice_request = true if the user asks what they should do (continue, stop, which fund, how much, whether returns will be good), or asks for predictions.
 - answerable = true only if the knowledge base directly answers the question. If it only partly or indirectly relates, answerable = false. Never guess.
 - answer: plain, calm English under 80 words. No recommendations, no predictions, no fund names, no percentages, no fear, urgency or loss framing. Do not tell the user what to do; explain how the options work.
-- Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
-- State only what the sources say. Do not add your own inferences or conclusions.
-- Keep every qualifier the source gives. If a source says something is one provider's practice, typical, or may happen, say so (for example "one platform also counts skipped instalments"), never state it as a general rule.
 - citations: the knowledge base IDs that support every statement in the answer.`;
 
 const QA_TOOL = {
@@ -92,10 +88,6 @@ const QA_TOOL = {
 
 const JUDGE_SYSTEM = `You are a strict reviewer. You get an answer and the source texts it cites.
 supported = true only if every factual statement in the answer is directly supported by the cited sources.
-Judge only the statements the answer makes. Leaving information out is never a reason to fail, and naming or not naming a source does not matter.
-supported = false only if a statement (a) contradicts the sources, (b) adds a fact or inference the sources do not contain, or (c) turns something the source presents as one provider's practice into a general rule.
-Small paraphrases with the same meaning are supported.
-Each source starts with its title, which names the publisher. Naming that publisher in the answer counts as supported.
 gives_advice = true if the answer recommends any action, fund, amount or timing, or predicts returns.
 pressure_language = true if the answer uses fear, regret, loss framing, missing out or urgency.`;
 
@@ -138,7 +130,7 @@ const PLAN_TOOL = {
 const sources = ids => ids.map(id => kbById(id)).filter(Boolean).map(k => ({ id: k.id, title: k.title, url: k.url, status: k.status }));
 const fallback = (kind, checks) => ({ type: 'fallback', kind, text: FALLBACK[kind], link: HELP_URL, checks });
 
-async function handleQA(message, debug = false) {
+async function handleQA(message) {
   const checks = { G1: 'skipped', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'pass', G6: 'skipped' };
   const qa = await callTool(QA_SYSTEM, `<question>${message}</question>`, QA_TOOL, 500);
 
@@ -146,29 +138,22 @@ async function handleQA(message, debug = false) {
   checks.G3 = 'pending';
   if (!qa.in_scope) { checks.G6 = 'fail'; return fallback('scope', checks); }
   checks.G6 = 'pass';
-  // Eval tracing: when debug is on, attach the rejected draft and the reason so failures can be diagnosed.
-  const trace = extra => debug ? { draft: qa.answer, draft_citations: qa.citations || [], ...extra } : undefined;
-  const fb = (kind, extra) => { const f = fallback(kind, checks); const t = trace(extra); if (t) f.trace = t; return f; };
-  if (!qa.answerable) { checks.G2 = 'fail'; return fb('unsure', { stopped_at: 'model said not answerable' }); }
+  if (!qa.answerable) { checks.G2 = 'fail'; return fallback('unsure', checks); }
 
   const cites = [...new Set(qa.citations || [])];
-  if (!cites.length || cites.some(c => !KB_IDS.includes(c))) { checks.G1 = 'fail'; return fb('unsure', { stopped_at: 'no valid citation' }); }
+  if (!cites.length || cites.some(c => !KB_IDS.includes(c))) { checks.G1 = 'fail'; return fallback('unsure', checks); }
   checks.G1 = 'pass';
-  if (hasPII(qa.answer)) { checks.G5 = 'fail'; return fb('privacy', { stopped_at: 'PII in answer' }); }
-  if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fb('advice', { stopped_at: 'advice words in answer' }); }
-  if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fb('unsure', { stopped_at: 'pressure words in answer' }); }
+  if (hasPII(qa.answer)) { checks.G5 = 'fail'; return fallback('privacy', checks); }
+  if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fallback('advice', checks); }
+  if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fallback('unsure', checks); }
 
-  // The judge sees the same evidence the answerer saw: ID, title (publisher) and text.
-  const cited = cites.map(id => `[${id}] ${kbById(id).title}\n${kbById(id).text}`).join('\n\n');
+  const cited = cites.map(id => `[${id}] ${kbById(id).text}`).join('\n\n');
   const j = await callTool(JUDGE_SYSTEM, `<answer>${qa.answer}</answer>\n<sources>\n${cited}\n</sources>`, JUDGE_TOOL, 300);
   checks.G2 = j.supported ? 'pass' : 'fail';
   checks.G3 = j.gives_advice ? 'fail' : 'pass';
   checks.G4 = j.pressure_language ? 'fail' : 'pass';
-  if (j.gives_advice || !j.supported || j.pressure_language) {
-    console.log('judge_reject', JSON.stringify({ q: message, draft: qa.answer, cites, reason: j.reason }));
-  }
-  if (j.gives_advice) return fb('advice', { stopped_at: 'judge: gives advice', judge_reason: j.reason });
-  if (!j.supported || j.pressure_language) return fb('unsure', { stopped_at: j.supported ? 'judge: pressure language' : 'judge: not supported by sources', judge_reason: j.reason });
+  if (j.gives_advice) return fallback('advice', checks);
+  if (!j.supported || j.pressure_language) return fallback('unsure', checks);
 
   return { type: 'answer', text: qa.answer, citations: sources(cites), checks };
 }
@@ -204,7 +189,6 @@ module.exports = async (req, res) => {
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   const mode = body && body.mode === 'plan' ? 'plan' : 'qa';
   const message = String((body && body.message) || '').trim();
-  const debug = !!(body && body.debug === true);
   if (!message) { res.status(400).json({ error: 'Empty message' }); return; }
   if (message.length > MAX_INPUT) { res.status(400).json({ error: `Please keep it under ${MAX_INPUT} characters.` }); return; }
 
@@ -215,7 +199,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const out = mode === 'plan' ? await handlePlan(message) : await handleQA(message, debug);
+    const out = mode === 'plan' ? await handlePlan(message) : await handleQA(message);
     res.status(200).json(out);
   } catch (e) {
     console.error(e.message, e.detail || '');
