@@ -252,16 +252,30 @@
       aText.placeholder = 'For example: salary comes on the 1st';
     } else {
       bot(`Ask me how skipping, pausing, stopping or restarting a SIP works. I answer only from official and cited sources, and I can't give investment advice.`);
-      const chips = ['What happens to my units if I stop?', 'How do I skip this month?', 'What if my SIP payment fails?'];
-      const c = document.createElement('div'); c.className = 'chips';
-      chips.forEach(t => { const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
-      aBody.appendChild(c);
+      asked.clear();
+      suggest(null);
       aText.placeholder = 'Ask about skipping, pausing or restarting';
     }
     aText.focus();
   }
   $('#aClose').onclick = () => { panel.hidden = true; document.body.classList.remove('a-open'); };
   $('#fab').onclick = () => openAssistant('qa');
+
+  // suggested questions; after every answer the assistant offers the ones not yet asked
+  const SUGGESTED = ['How do I skip this month?', 'What happens to my units if I stop?', 'What if my SIP payment fails?', 'Can I change my SIP date?', 'If I stop, can I restart later?'];
+  const asked = new Set();
+  function suggest(lead) {
+    const old = aBody.querySelector('.followup'); if (old) old.remove();
+    const left = SUGGESTED.filter(q => !asked.has(q)).slice(0, 3);
+    const w = document.createElement('div'); w.className = 'followup';
+    w.innerHTML = lead ? `<div class="f-lead">${lead}</div>` : '';
+    const c = document.createElement('div'); c.className = 'chips';
+    left.forEach(t => { const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
+    w.appendChild(c);
+    const hint = document.createElement('div'); hint.className = 'f-hint'; hint.textContent = 'Or type your own question below.';
+    w.appendChild(hint);
+    aBody.appendChild(w); aBody.scrollTop = aBody.scrollHeight;
+  }
 
   function bot(html, cls = '') {
     const d = document.createElement('div'); d.className = 'msg bot ' + cls; d.innerHTML = html;
@@ -278,7 +292,8 @@
   aForm.addEventListener('submit', e => { e.preventDefault(); const t = aText.value.trim(); if (t) send(t); });
 
   async function send(text) {
-    aText.value = '';
+    aText.value = ''; asked.add(text);
+    const old = aBody.querySelector('.followup'); if (old) old.remove();
     user(text);
     const n = loadCount();
     if (n >= MAX_MSGS) { bot('This demo allows ' + MAX_MSGS + ' messages per visit. Thanks for trying it.', 'fallback'); return; }
@@ -292,10 +307,12 @@
     } catch (err) {
       typing.remove();
       bot(`Sorry, I couldn't reach the assistant just now. ${esc(err.message || '')}`, 'fallback');
+      if (mode === 'qa') suggest('You can try again or ask something else.');
       return;
     }
     typing.remove();
     render(data);
+    if (mode === 'qa') suggest('Anything else I can help you with?');
   }
 
   function render(d) {
