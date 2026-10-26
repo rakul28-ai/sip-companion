@@ -145,3 +145,24 @@ body.a-open .fab{display:none}
 .f-hint{font-size:12px;color:var(--muted);margin-top:6px}
 /* on phones the chat opens full screen so the input box is always visible */
 @media (max-width:820px){ .assistant{position:fixed;inset:0;z-index:30} }
+
+/* collapsible task card */
+.t-label{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.t-toggle{border:0;background:none;color:var(--accent);font:inherit;font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;padding:0;cursor:pointer}
+.task.collapsed .t-body{display:none}
+.stepbar .exit{display:none}
+
+/* phones: a scenario opens as a full-screen app view */
+@media (max-width:820px){
+  body.focus{overflow:hidden}
+  body.focus .side{display:none}
+  body.focus .page{padding:0}
+  body.focus .phone-wrap{position:fixed;inset:0;z-index:25;max-width:none;margin:0;gap:0;background:var(--bg);display:flex;flex-direction:column}
+  body.focus .stepbar{position:static;padding:8px 10px;border-bottom:1px solid var(--line)}
+  body.focus .stepbar .exit{display:block;flex:0 0 36px;border-radius:50%;padding:0;height:34px;font-size:15px}
+  body.focus .task{border-radius:0;border-left-width:0;border-right:0;border-top:0;padding:10px 14px;box-shadow:none}
+  body.focus .t-story,body.focus .t-do{font-size:13.5px}
+  body.focus .phone{flex:1;min-height:0;height:auto;width:100%;border:0;border-radius:0;box-shadow:none}
+  body.focus .statusbar{display:none}
+  body.focus .screen{height:100%}
+}
