@@ -49,7 +49,12 @@
       return;
     }
     const c = SCEN[key];
-    taskEl.innerHTML = `<div class="t-label">Scenario ${c.n} of 3 · ${c.title}</div><p class="t-story">${c.story}</p><p class="t-do"><b>Your task:</b> ${c.task}</p>`;
+    taskEl.classList.remove('collapsed');
+    taskEl.innerHTML = `<div class="t-label">Scenario ${c.n} of 3 · ${c.title}<button type="button" class="t-toggle" aria-label="Hide or show the task">Hide</button></div><div class="t-body"><p class="t-story">${c.story}</p><p class="t-do"><b>Your task:</b> ${c.task}</p></div>`;
+    taskEl.querySelector('.t-toggle').onclick = () => {
+      const col = taskEl.classList.toggle('collapsed');
+      taskEl.querySelector('.t-toggle').textContent = col ? 'Show task' : 'Hide';
+    };
   }
 
   function markDone(key) {
@@ -61,6 +66,7 @@
     const done = document.createElement('div'); done.className = 't-done';
     done.innerHTML = `<div class="t-check">✓ Done</div>${nextBtn}`;
     const old = taskEl.querySelector('.t-done'); if (old) old.remove();
+    taskEl.classList.remove('collapsed'); const tg = taskEl.querySelector('.t-toggle'); if (tg) tg.textContent = 'Hide';
     taskEl.appendChild(done);
   }
 
@@ -260,6 +266,7 @@
   }
   $('#aClose').onclick = () => { panel.hidden = true; document.body.classList.remove('a-open'); };
   $('#fab').onclick = () => openAssistant('qa');
+  $('#exitFocus').onclick = () => { document.body.classList.remove('focus'); panel.hidden = true; document.body.classList.remove('a-open'); closeSheet(); window.scrollTo(0, 0); };
 
   // suggested questions; after every answer the assistant offers the ones not yet asked
   const SUGGESTED = ['How do I skip this month?', 'What happens to my units if I stop?', 'What if my SIP payment fails?', 'Can I change my SIP date?', 'If I stop, can I restart later?'];
@@ -360,6 +367,7 @@
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-go]'); if (!g) return;
     panel.hidden = true; document.body.classList.remove('a-open'); closeSheet();
+    clearTimeout(toastTimer); toastEl.hidden = true;
     const key = routes[g.dataset.go] ? g.dataset.go : 'home';
     if (SCEN[key]) {
       // each scenario starts fresh, so the story always matches the screen
@@ -367,7 +375,8 @@
       showTask(key);
     }
     routes[key]();
-    if (window.matchMedia('(max-width: 820px)').matches) taskEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // on phones a scenario opens as a full-screen app view
+    if (SCEN[key] && window.matchMedia('(max-width: 820px)').matches) { document.body.classList.add('focus'); window.scrollTo(0, 0); }
   });
 
   // annotations: on by default for reviewers, off in test mode (?test=1)
