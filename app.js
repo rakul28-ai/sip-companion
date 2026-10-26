@@ -209,10 +209,31 @@
         <p class="src">${state.postpones >= 2 ? "You've moved this twice, so no more reminders will be sent unless you set a new date." : 'Restarting sets up the SIP again with the same fund and amount. You can change both.'}</p>
         ${annot(7, 'Guardrail: after 2 postponements reminders stop, so it never turns into nagging.')}
       </div>`;
-    $('#rs').onclick = () => { state.stopped = false; state.plan = null; state.skipsInRow = 0; toast(`SIP restarted at ${fmtINR(amt)}. (Simulated)`); markDone('restart'); };
+    $('#rs').onclick = () => { state.stopped = false; state.plan = null; state.skipsInRow = 0; restartSuccess(amt); };
     $('#rsSmall').onclick = () => lowerRestart();
     $('#rsMove').onclick = () => moveDate();
     $('#rsNot').onclick = () => { state.postpones++; moveDate(true); };
+  }
+
+  // a calm, positive confirmation: no hype, no pressure (brief forbids FOMO and urgency)
+  function restartSuccess(amount) {
+    const first = nextSipDate();
+    screen.innerHTML = `
+      <div class="success">
+        <div class="s-icon" aria-hidden="true">✓</div>
+        <h3>Your SIP is back on</h3>
+        <p class="s-lede">Welcome back. You've kept your investing habit going.</p>
+        <div class="card s-card">
+          <div class="list-item"><span class="muted">Fund</span><span>${SIP.fund}</span></div>
+          <div class="list-item"><span class="muted">Amount</span><span>${fmtINR(amount)} a month</span></div>
+          <div class="list-item"><span class="muted">First instalment</span><span>${fmtDate(first)}</span></div>
+        </div>
+        <p class="s-note">The units you bought earlier stayed invested the whole time. You can change the amount or date anytime from Edit SIP.</p>
+        ${annot(8, 'New: a clear, calm confirmation instead of a small toast. It closes the loop on the restart without hype or pressure, which the brief rules out.')}
+        <button class="btn primary" type="button" data-go="home">View my SIP</button>
+        <p class="src" style="text-align:center">(Simulated. Nothing is actually invested.)</p>
+      </div>`;
+    markDone('restart');
   }
 
   function lowerRestart() {
@@ -225,7 +246,7 @@
     $('#ramtYes').onclick = () => {
       const v = Number($('#ramt').value);
       if (!v || v < SIP.min) { $('#ramtMsg').textContent = `Minimum is ${fmtINR(SIP.min)}.`; return; }
-      state.stopped = false; state.plan = null; closeSheet(); toast(`SIP restarted at ${fmtINR(v)}. (Simulated)`); markDone('restart');
+      state.stopped = false; state.plan = null; closeSheet(); restartSuccess(v);
     };
     $('#ramtNo').onclick = closeSheet;
   }
