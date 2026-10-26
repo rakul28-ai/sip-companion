@@ -92,3 +92,39 @@ body.show-annot .annot{display:block}
   .side{max-width:none}
   .phone{width:100%;max-width:420px;height:760px;margin:0 auto;border-width:6px;border-radius:32px}
 }
+
+/* ---------- guided scenarios (UI v2) ---------- */
+.scenario.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.phone-wrap{display:flex;flex-direction:column;gap:14px;width:380px}
+.task{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:14px;padding:12px 14px}
+.t-label{color:var(--accent);font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.t-story{margin:0 0 6px;font-size:14.5px}
+.t-do{margin:0;font-size:14.5px}
+.t-done{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.t-check{color:var(--accent);font-weight:700;margin-bottom:6px}
+.t-done .btn{margin-top:0}
+.task .btn{margin-top:8px}
+.reviewers{margin-top:22px;padding-top:14px;border-top:1px solid var(--line)}
+.reviewers h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+body.test .reviewers{display:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-left:6px}
+.seg button{border:0;background:var(--card);color:var(--ink);padding:6px 10px;font-size:13px}
+.seg button.active{background:var(--accent);color:#fff}
+.stepbar{display:none}
+
+/* full-width view: no device frame, same screens */
+body.frameless .phone{width:100%;border:1px solid var(--line);border-radius:18px;box-shadow:none;height:720px}
+body.frameless .statusbar{display:none}
+body.frameless .screen{height:100%}
+
+@media (max-width:820px){
+  .phone-wrap{width:100%;max-width:420px;margin:0 auto}
+  .side .try,.side .scenarios{display:none}
+  .stepbar{display:flex;gap:6px;position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0}
+  .stepbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 4px;font-size:12.5px;font-weight:600;white-space:nowrap}
+  .task{scroll-margin-top:60px}
+  .stepbar button span{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px}
+  .stepbar button.active{border-color:var(--accent);background:var(--accent-soft)}
+  .phone{width:100%}
+  body.frameless .phone{height:72vh;height:72dvh;border-radius:14px}
+}
