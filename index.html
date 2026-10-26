@@ -18,17 +18,35 @@
     <div class="note">
       <b>Please read:</b> an independent student project (NextLeap PM Fellowship), not affiliated with or endorsed by Groww. SIP actions here are simulated; nothing is invested or changed. The assistant gives information only, not investment advice.
     </div>
-    <h2>Try a scenario</h2>
+    <h2 class="try">Try the 3 scenarios in order</h2>
     <div class="scenarios">
-      <button class="scenario" data-go="reminder"><span>1</span> Three days before the SIP date</button>
-      <button class="scenario" data-go="detail"><span>2</span> About to stop a SIP</button>
+      <button class="scenario" data-go="reminder"><span>1</span> A tight month is coming</button>
+      <button class="scenario" data-go="detail"><span>2</span> You decide to stop</button>
       <button class="scenario" data-go="restart"><span>3</span> Restart day</button>
     </div>
-    <label class="toggle"><input type="checkbox" id="annotToggle"> Show annotations (what changed vs the current app)</label>
-    <p class="small">Assistant quality is tested on a 20-case golden set: <a href="eval.html">run the evaluation</a>.</p>
+
+    <section class="reviewers" aria-label="For reviewers">
+      <h2>For reviewers</h2>
+      <label class="toggle"><input type="checkbox" id="annotToggle"> Show annotations (what changed vs the current app)</label>
+      <div class="toggle">View:
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" id="viewFrame">Phone frame</button>
+          <button type="button" id="viewFull">Full width</button>
+        </div>
+      </div>
+      <p class="small">Assistant quality is tested on a 20-case golden set: <a href="eval.html">run the evaluation</a>.</p>
+    </section>
   </aside>
 
   <main class="phone-wrap">
+    <nav class="stepbar" aria-label="Scenarios">
+      <button data-go="reminder"><span>1</span> Tight month</button>
+      <button data-go="detail"><span>2</span> Stop</button>
+      <button data-go="restart"><span>3</span> Restart</button>
+    </nav>
+
+    <div class="task" id="task" aria-live="polite"></div>
+
     <div class="phone" id="phone">
       <div class="statusbar"><span id="clock">9:41</span><span>●●● ▲ ▮</span></div>
       <div class="screen" id="screen"></div>
