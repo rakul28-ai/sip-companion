@@ -166,3 +166,12 @@ body.a-open .fab{display:none}
   body.focus .statusbar{display:none}
   body.focus .screen{height:100%}
 }
+
+/* wide screens: task card sits beside the phone, so the phone can use the full window height */
+@media (min-width:1000px){
+  .page{max-width:1260px;gap:28px}
+  .side{max-width:300px}
+  .phone-wrap{flex-direction:row;align-items:flex-start;width:auto;gap:20px}
+  .phone{order:1;height:clamp(620px, calc(100vh - 64px), 840px)}
+  .task{order:2;width:250px;position:sticky;top:32px}
+}
