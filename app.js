@@ -32,7 +32,7 @@
       task: "Decide what to do about this month's SIP." },
     detail: { n: 2, title: 'You decide to stop',
       story: 'Money will be tight for the next couple of months, and you have decided to stop your SIP.',
-      task: 'Go ahead and stop it from this screen, the way you normally would.' },
+      task: 'Go ahead and cancel it from this screen, the way you normally would.' },
     restart: { n: 3, title: 'Restart day',
       story: 'Last month money was tight, so you stopped your SIP and planned to restart today. Your salary has come in.',
       task: 'Decide what to do.' }
@@ -108,15 +108,15 @@
       <div class="card">
         <div class="muted">${SIP.fund}</div>
         <div class="row" style="margin:6px 0 4px"><span class="amount">${fmtINR(SIP.amount)}</span><span>${fmtDate(due)}</span></div>
-        <p style="margin:8px 0 2px">Skipping or lowering applies to this month only. Your SIP continues as usual after that.</p>
-        ${annot(2, 'Skip already exists in the app, but is buried under My SIPs, Edit SIP. Here it is offered at the moment it is needed (P2 and the researcher did not know it existed).')}
+        <p style="margin:8px 0 2px">Skipping affects only this month, and your SIP continues as usual after that. Lowering changes the amount until you change it back.</p>
+        ${annot(2, 'Skip already exists on the SIP details page, but only if you go looking for it (P2 and the researcher did not know it existed). Here it is offered 3 days before the debit, when it is needed.')}
         <button class="btn primary" id="keep">Keep as planned</button>
         <div class="btn-grid" style="margin-top:8px">
           <button class="btn" id="skip" ${blocked ? 'disabled' : ''}>Skip this month</button>
-          <button class="btn" id="lower">Lower this month</button>
+          <button class="btn" id="lower">Lower the amount</button>
         </div>
-        ${blocked ? `<p class="src">You've skipped the last 2 months. Under SEBI rules a monthly SIP can be cancelled after 3 consecutive missed instalments, so skipping is turned off here. You can still lower the amount, or plan a restart from the SIP page.</p>` : ''}
-        ${annot(3, 'Guardrail: Skip is hidden after 2 skips in a row and the 3-instalment rule is explained instead, so the nudge cannot cause accidental cancellation.')}
+        ${blocked ? `<p class="src">You've skipped the last 2 months. To keep your SIP safe, this app allows up to 2 skips in a row: a monthly SIP is cancelled after 3 failed payments in a row. You can still lower the amount, or plan a restart from the SIP page.</p>` : ''}
+        ${annot(3, 'Guardrail (design choice, not a SEBI rule): Skip is turned off after 2 skips in a row. Monthly SIPs are cancelled after 3 consecutive failed payments (SEBI letter, 3 Jan 2024); whether Groww counts skips toward this is unconfirmed, so the cap stays on the safe side.')}
         <button class="btn" id="ask">Ask a question</button>
       </div>`;
     $('#keep').onclick = () => { toast('All set. Your SIP goes out as planned.'); markDone('reminder'); };
@@ -139,16 +139,17 @@
 
   function lowerSheet(due) {
     openSheet(`
-      <h4>Lower the ${monthName(due)} amount</h4>
-      <p class="muted">This change applies to ${monthName(due)} only. From next month your SIP goes back to ${fmtINR(SIP.amount)}.</p>
-      <input type="number" id="amt" min="${SIP.min}" max="${SIP.amount}" step="100" value="1000" aria-label="Amount for this month">
+      <h4>Lower your SIP amount</h4>
+      <p class="muted">Your SIP continues at the new amount from ${monthName(due)}. You can change it back anytime from Edit SIP.</p>
+      <input type="number" id="amt" min="${SIP.min}" max="${SIP.amount}" step="100" value="1000" aria-label="New SIP amount">
       <p class="src" id="amtMsg">Minimum ${fmtINR(SIP.min)} (example scheme minimum).</p>
+      <label class="toggle" style="margin-top:8px"><input type="checkbox" id="amtRemind" checked> Remind me next month to review the amount</label>
       <button class="btn primary" id="amtYes">Confirm</button>
       <button class="btn" id="amtNo">Cancel</button>`);
     $('#amtYes').onclick = () => {
       const v = Number($('#amt').value);
       if (!v || v < SIP.min || v >= SIP.amount) { $('#amtMsg').textContent = `Enter an amount from ${fmtINR(SIP.min)} to ${fmtINR(SIP.amount - 100)}.`; return; }
-      state.skipsInRow = 0; closeSheet(); toast(`${monthName(due)}: ${fmtINR(v)}. Back to ${fmtINR(SIP.amount)} next month. (Simulated)`); markDone('reminder');
+      const rem = $('#amtRemind') && $('#amtRemind').checked; state.skipsInRow = 0; closeSheet(); toast(`SIP amount changed to ${fmtINR(v)}.${rem ? " We'll remind you next month to review it." : ''} (Simulated)`); markDone('reminder');
     };
     $('#amtNo').onclick = closeSheet;
   }
@@ -163,8 +164,8 @@
         <div class="list-item"><span class="muted">Status</span><span>${state.stopped ? 'Stopped' : state.plan ? 'Paused, restart planned' : 'Active'}</span></div>
       </div>
       <button class="btn" id="edit">Edit SIP</button>
-      <button class="btn" id="stop" ${state.stopped ? 'disabled' : ''}>Stop SIP</button>
-      ${annot(4, 'Unchanged entry point. The change happens after tapping Stop SIP.')}`;
+      <button class="btn" id="stop" ${state.stopped ? 'disabled' : ''}>Cancel SIP</button>
+      ${annot(4, 'Same entry point as the real app (Groww calls it Cancel SIP). The change happens after tapping it.')}`;
     $('#edit').onclick = () => toast('Edit amount and date: existing feature, not part of this concept.');
     const st = $('#stop'); if (st) st.onclick = stopSheet;
   }
@@ -172,18 +173,18 @@
   function stopSheet() {
     const due = nextSipDate();
     openSheet(`
-      <h4>Before you stop</h4>
+      <h4>Before you cancel</h4>
       <p>If this is a tight patch, you can pause and choose when to restart. Units you already hold stay invested either way.</p>
       <p class="src">Source: <a href="https://www.edelweissmf.com/investor-insights/mutual-fund-investment-tips-and-articles/how-to-stop-or-pause-an-sip" target="_blank" rel="noopener">Edelweiss MF, stopping or pausing a SIP</a></p>
-      ${annot(5, 'New sheet. Today Stop SIP goes straight to confirmation, and a "temporary" stop often becomes permanent (P2, P4). All three options have equal weight: Stop is never hidden.')}
+      ${annot(5, 'New sheet before cancelling: it offers a planned pause, because a "temporary" stop often becomes permanent (P2, P4). All three options have equal weight, and Cancel is never hidden.')}
       <button class="btn equal" id="planBtn">Pause and plan a restart</button>
       <button class="btn equal" id="skipBtn" ${state.skipsInRow >= 2 ? 'disabled' : ''}>Skip just this month</button>
-      <button class="btn equal" id="stopBtn">Stop SIP</button>`);
+      <button class="btn equal" id="stopBtn">Cancel SIP</button>`);
     $('#planBtn').onclick = () => { closeSheet(); openAssistant('plan'); };
     const sb = $('#skipBtn'); if (sb) sb.onclick = () => { closeSheet(); skipSheet(due); };
     $('#stopBtn').onclick = () => {
       state.stopped = true; closeSheet();
-      toast('SIP stopped. Units you hold stay invested. (Simulated)'); detail(); markDone('detail');
+      toast('SIP cancelled. Units you hold stay invested. (Simulated)'); detail(); markDone('detail');
     };
   }
 
