@@ -246,7 +246,7 @@
   function openAssistant(m) {
     mode = m; aBody.innerHTML = ''; state.planTries = 0;
     $('#aTitle').textContent = m === 'plan' ? 'Plan your restart' : 'SIP assistant';
-    panel.hidden = false;
+    panel.hidden = false; document.body.classList.add('a-open');
     if (m === 'plan') {
       bot(`Pausing can help through a tight month. Let's pick a realistic restart date.<br><br><b>When does your salary or income usually arrive each month?</b>`);
       aText.placeholder = 'For example: salary comes on the 1st';
@@ -260,7 +260,8 @@
     }
     aText.focus();
   }
-  $('#aClose').onclick = () => { panel.hidden = true; };
+  $('#aClose').onclick = () => { panel.hidden = true; document.body.classList.remove('a-open'); };
+  $('#fab').onclick = () => openAssistant('qa');
 
   function bot(html, cls = '') {
     const d = document.createElement('div'); d.className = 'msg bot ' + cls; d.innerHTML = html;
@@ -334,14 +335,14 @@
                            : `Your SIP will skip ${skipsNeeded === 1 ? 'the next instalment' : 'the next 2 instalments'} and continue automatically from then.`)
       : `That would mean ${total} missed instalments in a row, and skipping 3 in a row can cancel a SIP. So your SIP will be stopped now (units stay invested) and a one-tap restart with the same fund and amount will be ready on ${fmtDate(date)}.`;
     bot(`<b>Restart planned for ${fmtDate(date)}.</b> ${how} We'll remind you that day.<div class="src">(Simulated)</div><div class="actions"><button class="btn" type="button">See restart day</button></div>`)
-      .querySelector('button').onclick = () => { panel.hidden = true; restart(); showTask(null); taskEl.innerHTML = `<div class="t-label">Your plan</div><p class="t-story">This is what you would see on your restart day.</p>`; };
+      .querySelector('button').onclick = () => { panel.hidden = true; document.body.classList.remove('a-open'); restart(); showTask(null); taskEl.innerHTML = `<div class="t-label">Your plan</div><p class="t-story">This is what you would see on your restart day.</p>`; };
   }
 
   // ---------- routing ----------
   const routes = { home, reminder, detail, restart };
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-go]'); if (!g) return;
-    panel.hidden = true; closeSheet();
+    panel.hidden = true; document.body.classList.remove('a-open'); closeSheet();
     const key = routes[g.dataset.go] ? g.dataset.go : 'home';
     if (SCEN[key]) {
       // each scenario starts fresh, so the story always matches the screen
