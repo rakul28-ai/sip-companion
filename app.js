@@ -166,8 +166,36 @@
       <button class="btn" id="edit">Edit SIP</button>
       <button class="btn" id="stop" ${state.stopped ? 'disabled' : ''}>Cancel SIP</button>
       ${annot(4, 'Same entry point as the real app (Groww calls it Cancel SIP). The change happens after tapping it.')}`;
-    $('#edit').onclick = () => toast('Edit amount and date: existing feature, not part of this concept.');
+    $('#edit').onclick = editSheet;
     const st = $('#stop'); if (st) st.onclick = stopSheet;
+  }
+
+  // Edit SIP mirrors the real app: change amount and/or date (applies to all future instalments), or skip the next one
+  function editSheet() {
+    const due = nextSipDate();
+    const days = Array.from({ length: 28 }, (_, i) => i + 1)
+      .map(d => `<option value="${d}" ${d === SIP.day ? 'selected' : ''}>${d}${['th','st','nd','rd'][((d % 100) - 20) % 10] || ['th','st','nd','rd'][d % 100] || 'th'} of every month</option>`).join('');
+    openSheet(`
+      <h4>Edit SIP</h4>
+      <p class="muted">Changes apply to all future instalments. You can change them again anytime.</p>
+      <label class="small" for="eAmt">Amount</label>
+      <input type="number" id="eAmt" min="${SIP.min}" step="100" value="${SIP.amount}">
+      <label class="small" for="eDay" style="display:block;margin-top:10px">Date</label>
+      <select id="eDay" class="select">${days}</select>
+      <p class="src" id="eMsg">Minimum ${fmtINR(SIP.min)} (example scheme minimum).</p>
+      <button class="btn primary" id="eSave">Save changes</button>
+      <button class="btn" id="eSkip" ${state.skipsInRow >= 2 ? 'disabled' : ''}>Skip the ${monthName(due)} instalment instead</button>
+      <button class="btn" id="eNo">Cancel</button>`);
+    $('#eSave').onclick = () => {
+      const v = Number($('#eAmt').value), d = Number($('#eDay').value);
+      if (!v || v < SIP.min) { $('#eMsg').textContent = `Minimum is ${fmtINR(SIP.min)}.`; return; }
+      if (v === SIP.amount && d === SIP.day) { $('#eMsg').textContent = 'Change the amount or the date to save.'; return; }
+      closeSheet();
+      toast(`SIP updated: ${fmtINR(v)} on the ${d}${d === 1 || d === 21 ? 'st' : d === 2 || d === 22 ? 'nd' : d === 3 || d === 23 ? 'rd' : 'th'} of every month. (Simulated)`);
+      markDone(current);
+    };
+    const sk = $('#eSkip'); if (sk) sk.onclick = () => { closeSheet(); skipSheet(due); };
+    $('#eNo').onclick = closeSheet;
   }
 
   function stopSheet() {
