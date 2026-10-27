@@ -185,3 +185,5 @@ body.a-open .fab{display:none}
 .s-note{font-size:13.5px;color:var(--muted);margin:4px 2px 12px;text-align:left}
 @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 @media (prefers-reduced-motion:reduce){.s-icon{animation:none}}
+
+.select{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;margin-top:6px}
