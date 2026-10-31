@@ -21,8 +21,9 @@ const hits = new Map();
 function rateLimited(ip) {
   const now = Date.now(), win = 10 * 60 * 1000, max = 60;
   const arr = (hits.get(ip) || []).filter(t => now - t < win);
+  if (arr.length >= max) { hits.set(ip, arr); return true; } // blocked requests are not counted, so the window can clear
   arr.push(now); hits.set(ip, arr);
-  return arr.length > max;
+  return false;
 }
 
 async function callTool(system, user, tool, maxTokens = 500) {
