@@ -1,10 +1,10 @@
 // Serverless function (Vercel, Node 18+). The Anthropic key is read from the
 // ANTHROPIC_API_KEY environment variable and never sent to the browser.
 const { KB, KB_IDS, kbById } = require('../lib/kb');
-const { restartDate, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
+const { restartDate, restartDateAfter, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
-const PROMPT_VERSION = 'qa-v4'; // v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
+const PROMPT_VERSION = 'qa-v5'; // v5: conversation memory (last 4 turns), K6 to K8, never mention the knowledge base, two-input planner with check-in. Earlier: v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -72,6 +72,8 @@ Rules:
 - Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
 - State only what the sources say. Do not add your own inferences or conclusions.
 - Keep every qualifier the source gives. If a source says something is one provider's practice, typical, or may happen, say so (for example "one platform also counts skipped instalments"), never state it as a general rule.
+- Never mention "the knowledge base" or "the sources" in the answer text.
+- If there is an earlier conversation, use it only to understand what the new question refers to (for example "it" or "that"). Answer only the new question, only from the knowledge base.
 - citations: the knowledge base IDs that support every statement in the answer.`;
 
 const QA_TOOL = {
@@ -114,12 +116,15 @@ const JUDGE_TOOL = {
   }
 };
 
-const PLAN_SYSTEM = `You help a user say when their income usually arrives each month.
-Extract the day of the month (1 to 31) when money usually comes in.
-- If they give one clear day (for example "1st", "salary on 5th", "around the 10th"), set payday_day to it and needs_clarification = false.
+const PLAN_SYSTEM = `You help a user plan when to come back to their paused SIP. Read everything the user has said in this conversation and extract two things.
+1. payday_day: the day of the month (1 to 31) when money usually comes in.
+- One clear day ("1st", "salary on 5th", "around the 10th"): use it.
 - "End of the month" or "last day" means 30.
-- If it is vague, a range, irregular or late (for example "last week, sometimes late", "it varies"), set payday_day to 0, needs_clarification = true, and write one short, friendly question asking for the latest day it usually arrives by.
-- Never invent a day the user did not give. No advice.`;
+- Vague, a range, irregular or late ("last week, sometimes late", "it varies"): 0, and write one short, friendly question asking for the latest day it usually arrives by.
+2. When things will settle:
+- settle_months: whole months from now until the user expects money to be back on track ("next month" = 1, "in about 2 months" = 2, "by March" = months from now). 0 if they did not say.
+- settle_unsure: true only if the user says they do not know, are not sure, or it depends.
+Never invent a day or a month the user did not give. No advice.`;
 
 const PLAN_TOOL = {
   name: 'payday',
@@ -128,19 +133,26 @@ const PLAN_TOOL = {
     type: 'object',
     properties: {
       payday_day: { type: 'integer', minimum: 0, maximum: 31, description: 'Day of month 1 to 31, or 0 if not clearly given' },
-      needs_clarification: { type: 'boolean' },
-      question: { type: 'string' }
+      settle_months: { type: 'integer', minimum: 0, maximum: 12, description: 'Months until money is back on track, 0 if not said' },
+      settle_unsure: { type: 'boolean' },
+      question: { type: 'string', description: 'A short question for the payday, only used when payday_day is 0' }
     },
-    required: ['payday_day', 'needs_clarification', 'question']
+    required: ['payday_day', 'settle_months', 'settle_unsure', 'question']
   }
 };
 
 const sources = ids => ids.map(id => kbById(id)).filter(Boolean).map(k => ({ id: k.id, title: k.title, url: k.url, status: k.status }));
 const fallback = (kind, checks) => ({ type: 'fallback', kind, text: FALLBACK[kind], link: HELP_URL, checks });
 
-async function handleQA(message, debug = false) {
+// Earlier turns (at most 4) are passed as context so follow-up questions make sense.
+function historyBlock(history) {
+  if (!history.length) return '';
+  return '<earlier_conversation>\n' + history.map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n') + '\n</earlier_conversation>\n';
+}
+
+async function handleQA(message, debug = false, history = []) {
   const checks = { G1: 'skipped', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'pass', G6: 'skipped' };
-  const qa = await callTool(QA_SYSTEM, `<question>${message}</question>`, QA_TOOL, 500);
+  const qa = await callTool(QA_SYSTEM, `${historyBlock(history)}<question>${message}</question>`, QA_TOOL, 500);
 
   if (qa.advice_request) { checks.G3 = 'fail'; return fallback('advice', checks); }
   checks.G3 = 'pending';
@@ -173,19 +185,31 @@ async function handleQA(message, debug = false) {
   return { type: 'answer', text: qa.answer, citations: sources(cites), checks };
 }
 
-async function handlePlan(message) {
-  const p = await callTool(PLAN_SYSTEM, `<user>${message}</user>`, PLAN_TOOL, 200);
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const nice = d => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const SETTLE_Q = "Do you know roughly when things will settle, for example in a month or two? It's fine to say you're not sure yet.";
+
+// The model only extracts what the user said. Which reply to give, and every date, is decided by code.
+async function handlePlan(message, history = []) {
+  const said = history.filter(h => h.role === 'user').map(h => h.text).concat(message);
+  const p = await callTool(PLAN_SYSTEM, `<user_said>\n${said.join('\n')}\n</user_said>`, PLAN_TOOL, 250);
   const day = Number.isInteger(p.payday_day) && p.payday_day >= 1 && p.payday_day <= 31 ? p.payday_day : null;
-  if (p.needs_clarification || !day) {
-    return { type: 'clarify', text: p.question || 'Which day of the month does your money usually arrive by?' };
+  if (!day) return { type: 'clarify', ask: 'payday', text: p.question || 'Which day of the month does your money usually arrive by?' };
+  if (p.settle_unsure) {
+    const d = restartDate(day);
+    return {
+      type: 'checkin', payday_day: day, date_iso: iso(d),
+      text: `No problem, you don't need to decide now. I'll check in on ${nice(d)}, a few days after your next payday, and you can restart then or check again later. Does that work?`,
+      rule: 'next payday + 3 days, moved off weekends'
+    };
   }
-  const d = restartDate(day);
+  const months = Number.isInteger(p.settle_months) ? p.settle_months : 0;
+  if (months < 1) return { type: 'clarify', ask: 'settle', payday_day: day, text: SETTLE_Q };
+  const d = restartDateAfter(day, months);
   return {
-    type: 'plan',
-    payday_day: day,
-    date_iso: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-    text: `Your money usually arrives around the ${ordinal(day)}. A restart date a few days after that is ${d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}. Does that work?`,
-    rule: 'payday + 3 days, moved off weekends'
+    type: 'plan', payday_day: day, settle_months: months, date_iso: iso(d),
+    text: `Your money usually arrives around the ${ordinal(day)}, and you expect things to settle in about ${months} month${months > 1 ? 's' : ''}. A restart date a few days after that payday is ${nice(d)}. Does that work?`,
+    rule: 'payday in the month things settle + 3 days, moved off weekends'
   };
 }
 
@@ -205,17 +229,21 @@ module.exports = async (req, res) => {
   const mode = body && body.mode === 'plan' ? 'plan' : 'qa';
   const message = String((body && body.message) || '').trim();
   const debug = !!(body && body.debug === true);
+  // Up to 4 earlier turns, each trimmed; never trusted beyond being context.
+  const history = (Array.isArray(body && body.history) ? body.history : []).slice(-4)
+    .filter(h => h && typeof h.text === 'string' && (h.role === 'user' || h.role === 'assistant'))
+    .map(h => ({ role: h.role, text: h.text.slice(0, MAX_INPUT) }));
   if (!message) { res.status(400).json({ error: 'Empty message' }); return; }
   if (message.length > MAX_INPUT) { res.status(400).json({ error: `Please keep it under ${MAX_INPUT} characters.` }); return; }
 
   // G5 on input: never send personal identifiers to the model.
-  if (hasPII(message)) {
+  if (hasPII(message) || history.some(h => h.role === 'user' && hasPII(h.text))) {
     res.status(200).json(fallback('privacy', { G1: 'skipped', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'fail', G6: 'skipped' }));
     return;
   }
 
   try {
-    const out = mode === 'plan' ? await handlePlan(message) : await handleQA(message, debug);
+    const out = mode === 'plan' ? await handlePlan(message, history) : await handleQA(message, debug, history);
     res.status(200).json(out);
   } catch (e) {
     console.error(e.message, e.detail || '');
