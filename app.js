@@ -117,11 +117,9 @@
         </div>
         ${blocked ? `<p class="src">You've skipped the last 2 months. To keep your SIP safe, this app allows up to 2 skips in a row: a monthly SIP is cancelled after 3 failed payments in a row. You can still lower the amount, or plan a restart from the SIP page.</p>` : ''}
         ${annot(3, 'Guardrail (design choice, not a SEBI rule): Skip is turned off after 2 skips in a row. Monthly SIPs are cancelled after 3 consecutive failed payments (SEBI letter, 3 Jan 2024); whether Groww counts skips toward this is unconfirmed, so the cap stays on the safe side.')}
-        <button class="btn" id="ask">Ask a question</button>
       </div>`;
     $('#keep').onclick = () => { toast('All set. Your SIP goes out as planned.'); markDone('reminder'); };
     $('#lower').onclick = () => lowerSheet(due);
-    $('#ask').onclick = () => openAssistant('qa');
     const sk = $('#skip'); if (sk) sk.onclick = () => skipSheet(due);
   }
 
@@ -217,30 +215,49 @@
   }
 
   function restart() {
-    const amt = SIP.amount;
+    const amt = state.restartAmount || SIP.amount;
+    const checkin = state.plan && state.plan.kind === 'checkin';
     const planned = state.plan ? new Date(state.plan.date) : new Date();
+    const capped = state.postpones >= 2;
     screen.innerHTML = `
       <div class="notif">
         <div class="app">SIP reminder · today</div>
-        <div><b>You planned to restart your SIP today.</b></div>
-        <div class="muted" style="font-size:13.5px">${SIP.fund} · planned ${fmtDate(planned)}</div>
+        <div><b>${checkin ? 'Quick check-in: is money back on track?' : 'You planned to restart your SIP today.'}</b></div>
+        <div class="muted" style="font-size:13.5px">${SIP.fund} · ${checkin ? 'check-in' : 'planned'} ${fmtDate(planned)}</div>
       </div>
-      ${annot(6, 'New: the restart has a date and a one-tap action, instead of an open-ended "next month" that keeps sliding (P2, P4).')}
+      ${annot(6, 'New: a restart date, or a check-in when the user is not sure money will have recovered (P3), instead of an open-ended "next month" (P2, P4). Two choices only.')}
       <div class="card">
-        <p style="margin-top:0">Restart with one tap?</p>
+        <p style="margin-top:0">${checkin ? 'If you are ready, restart with one tap. If not, that is fine too.' : 'Restart with one tap?'}</p>
         <button class="btn primary" id="rs">Restart at ${fmtINR(amt)}</button>
-        <div class="btn-grid" style="margin-top:8px">
-          <button class="btn" id="rsSmall">Restart smaller</button>
-          <button class="btn" id="rsMove">Move the date</button>
-        </div>
-        <button class="btn" id="rsNot">Not now</button>
-        <p class="src">${state.postpones >= 2 ? "You've moved this twice, so no more reminders will be sent unless you set a new date." : 'Restarting sets up the SIP again with the same fund and amount. You can change both.'}</p>
-        ${annot(7, 'Guardrail: after 2 postponements reminders stop, so it never turns into nagging.')}
+        <button class="linkbtn" id="rsAmt" type="button">Change amount</button>
+        <button class="btn" id="rsNot" ${capped ? 'disabled' : ''}>Not yet</button>
+        <p class="src">${capped ? "You've said not yet twice, so no more reminders will be sent. You can restart from the SIP page anytime." : 'Restarting sets up the SIP again with the same fund. You can change the amount now or later.'}</p>
+        ${annot(7, 'Guardrail: after 2 "not yet" answers, reminders stop, so it never turns into nagging.')}
       </div>`;
-    $('#rs').onclick = () => { state.stopped = false; state.plan = null; state.skipsInRow = 0; restartSuccess(amt); };
-    $('#rsSmall').onclick = () => lowerRestart();
-    $('#rsMove').onclick = () => moveDate();
-    $('#rsNot').onclick = () => { state.postpones++; moveDate(true); };
+    $('#rs').onclick = () => { state.stopped = false; state.plan = null; state.skipsInRow = 0; state.restartAmount = null; restartSuccess(amt); };
+    $('#rsAmt').onclick = () => lowerRestart();
+    const nb = $('#rsNot'); if (nb) nb.onclick = notYet;
+  }
+
+  function notYet() {
+    const next = (() => { const d = nextSipDate(); d.setDate(d.getDate() + 3); return d; })();
+    const min = new Date(); min.setDate(min.getDate() + 1);
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    openSheet(`
+      <h4>No problem. When should I check in?</h4>
+      <p class="muted">Your units stay invested in the meantime.</p>
+      <button class="btn primary" id="nyNext">After your next payday (${fmtDate(next)})</button>
+      <label class="small" for="nd" style="display:block;margin-top:12px">Or pick a date</label>
+      <input type="date" id="nd" min="${iso(min)}" value="${iso(addMonths(min, 1))}">
+      <button class="btn" id="ndYes">Save this date</button>
+      <button class="btn" id="ndNo">Cancel</button>`);
+    const save = d => {
+      state.postpones++; state.plan = { date: iso(d) + 'T00:00:00', kind: 'checkin' }; closeSheet();
+      toast(`Check-in set for ${fmtDate(d)}. (Simulated)`); restart(); markDone('restart');
+    };
+    $('#nyNext').onclick = () => save(next);
+    $('#ndYes').onclick = () => { const v = $('#nd').value; if (v) save(new Date(v + 'T00:00:00')); };
+    $('#ndNo').onclick = closeSheet;
   }
 
   // a calm, positive confirmation: no hype, no pressure (brief forbids FOMO and urgency)
@@ -266,33 +283,17 @@
 
   function lowerRestart() {
     openSheet(`
-      <h4>Restart at a smaller amount</h4>
+      <h4>Change the restart amount</h4>
       <input type="number" id="ramt" min="${SIP.min}" step="100" value="1000" aria-label="Restart amount">
       <p class="src" id="ramtMsg">Minimum ${fmtINR(SIP.min)} (example scheme minimum).</p>
-      <button class="btn primary" id="ramtYes">Restart</button>
+      <button class="btn primary" id="ramtYes">Use this amount</button>
       <button class="btn" id="ramtNo">Cancel</button>`);
     $('#ramtYes').onclick = () => {
       const v = Number($('#ramt').value);
       if (!v || v < SIP.min) { $('#ramtMsg').textContent = `Minimum is ${fmtINR(SIP.min)}.`; return; }
-      state.stopped = false; state.plan = null; closeSheet(); restartSuccess(v);
+      state.restartAmount = v; closeSheet(); restart();
     };
     $('#ramtNo').onclick = closeSheet;
-  }
-
-  function moveDate(fromNotNow) {
-    const min = new Date(); min.setDate(min.getDate() + 1);
-    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    openSheet(`
-      <h4>${fromNotNow ? 'When would suit you?' : 'Pick a new restart date'}</h4>
-      <input type="date" id="nd" min="${iso(min)}" value="${iso(addMonths(min, 1))}">
-      <button class="btn primary" id="ndYes">Save date</button>
-      <button class="btn" id="ndNo">Cancel</button>`);
-    $('#ndYes').onclick = () => {
-      const v = $('#nd').value; if (!v) return;
-      state.plan = { date: v + 'T00:00:00' }; closeSheet();
-      toast(`Restart planned for ${fmtDate(new Date(v + 'T00:00:00'))}. (Simulated)`); restart(); markDone('restart');
-    };
-    $('#ndNo').onclick = closeSheet;
   }
 
   // ---------- assistant ----------
@@ -300,12 +301,12 @@
   let mode = 'qa';
 
   function openAssistant(m) {
-    mode = m; aBody.innerHTML = ''; state.planTries = 0;
+    mode = m; aBody.innerHTML = ''; state.planTries = 0; convo.length = 0;
     $('#aTitle').textContent = m === 'plan' ? 'Plan your restart' : 'SIP assistant';
     panel.hidden = false; document.body.classList.add('a-open');
     if (m === 'plan') {
-      bot(`Pausing can help through a tight month. Let's pick a realistic restart date.<br><br><b>When does your salary or income usually arrive each month?</b>`);
-      aText.placeholder = 'For example: salary comes on the 1st';
+      bot(`Pausing can help through a tight month. Let's plan when to come back.<br><br><b>When does your salary usually arrive, and do you know roughly when things will settle?</b> It's fine to say you're not sure yet.`);
+      aText.placeholder = 'For example: salary on the 1st, should be fine in 2 months';
     } else {
       bot(`Ask me how skipping, pausing, stopping or restarting a SIP works. I answer only from official and cited sources, and I can't give investment advice.`);
       asked.clear();
@@ -348,6 +349,7 @@
 
   aForm.addEventListener('submit', e => { e.preventDefault(); const t = aText.value.trim(); if (t) send(t); });
 
+  const convo = [];
   async function send(text) {
     aText.value = ''; asked.add(text);
     const old = aBody.querySelector('.followup'); if (old) old.remove();
@@ -358,7 +360,7 @@
     const typing = bot('<span class="typing">Checking sources…</span>');
     let data;
     try {
-      const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, message: text }) });
+      const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, message: text, history: convo.slice(-4) }) });
       data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Request failed');
     } catch (err) {
@@ -368,47 +370,66 @@
       return;
     }
     typing.remove();
+    convo.push({ role: 'user', text });
+    if (data.text) convo.push({ role: 'assistant', text: String(data.text).slice(0, 500) });
     render(data);
     if (mode === 'qa') suggest('Anything else I can help you with?');
   }
 
   function render(d) {
     if (d.type === 'answer') {
-      const cites = (d.citations || []).map(c => `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}${c.status === 'secondary' ? ' (secondary)' : ''}</a>`).join('');
+      const cites = (d.citations || []).map(c => c.url
+        ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}${c.status === 'secondary' ? ' (secondary)' : ''}</a>`
+        : `<span class="cite-plain">${esc(c.title)}</span>`).join('');
       bot(`${esc(d.text)}<div class="cites">${cites}</div><div class="checked">✓ Checked: sourced · not advice · no pressure</div>`);
     } else if (d.type === 'fallback') {
       bot(`${esc(d.text)}${d.link ? `<div class="cites"><a href="${esc(d.link)}" target="_blank" rel="noopener">Official help</a></div>` : ''}`, 'fallback');
     } else if (d.type === 'clarify') {
+      if (d.ask === 'settle') {
+        const m = bot(`${esc(d.text)}<div class="chips" style="margin-top:8px"></div>`);
+        ['Not sure yet', 'In about 1 month', 'In about 2 months'].forEach(t => {
+          const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = t; b.onclick = () => send(t);
+          m.querySelector('.chips').appendChild(b);
+        });
+        return;
+      }
       state.planTries++;
       if (state.planTries >= 2) { datePicker('No problem. Pick a restart date that works for you:'); return; }
       bot(esc(d.text));
+    } else if (d.type === 'checkin') {
+      const m = bot(`${esc(d.text)}<div class="src">How this date is chosen: ${esc(d.rule)}. The assistant only reads what you said; the date is calculated by a fixed rule.</div><div class="actions"><button class="btn primary" type="button">Yes, check in then</button><button class="btn" type="button">Pick another date</button></div>`);
+      const [yes, other] = m.querySelectorAll('button');
+      yes.onclick = () => savePlan(d.date_iso, 'checkin');
+      other.onclick = () => datePicker('Pick a check-in date:', 'checkin');
     } else if (d.type === 'plan') {
-      const m = bot(`${esc(d.text)}<div class="src">How this date is chosen: ${esc(d.rule)}. The assistant only reads your payday; the date is calculated by a fixed rule.</div><div class="actions"><button class="btn primary" type="button">Yes, plan it</button><button class="btn" type="button">Pick another date</button></div>`);
+      const m = bot(`${esc(d.text)}<div class="src">How this date is chosen: ${esc(d.rule)}. The assistant only reads what you said; the date is calculated by a fixed rule.</div><div class="actions"><button class="btn primary" type="button">Yes, plan it</button><button class="btn" type="button">Pick another date</button></div>`);
       const [yes, other] = m.querySelectorAll('button');
       yes.onclick = () => savePlan(d.date_iso);
       other.onclick = () => datePicker('Pick a restart date:');
     }
   }
 
-  function datePicker(label) {
+  function datePicker(label, kind = 'plan') {
     const min = new Date(); min.setDate(min.getDate() + 1);
     const iso = `${min.getFullYear()}-${String(min.getMonth() + 1).padStart(2, '0')}-${String(min.getDate()).padStart(2, '0')}`;
     const m = bot(`${esc(label)}<input type="date" min="${iso}"><div class="actions"><button class="btn primary" type="button">Save</button></div>`);
-    m.querySelector('button').onclick = () => { const v = m.querySelector('input').value; if (v) savePlan(v); };
+    m.querySelector('button').onclick = () => { const v = m.querySelector('input').value; if (v) savePlan(v, kind); };
   }
 
-  function savePlan(dateIso) {
+  function savePlan(dateIso, kind = 'plan') {
     const date = new Date(dateIso + 'T00:00:00');
     let skipsNeeded = 0, d = nextSipDate();
     while (d < date) { skipsNeeded++; d = addMonths(d, 1); }
-    state.plan = { date: dateIso + 'T00:00:00' };
+    state.plan = { date: dateIso + 'T00:00:00', kind };
     markDone('detail');
     const total = skipsNeeded + state.skipsInRow;
     const how = total <= 2
       ? (skipsNeeded === 0 ? `No instalment is due before then, so nothing changes until ${fmtDate(date)}.`
                            : `Your SIP will skip ${skipsNeeded === 1 ? 'the next instalment' : 'the next 2 instalments'} and continue automatically from then.`)
       : `That would mean ${total} missed instalments in a row, and skipping 3 in a row can cancel a SIP. So your SIP will be stopped now (units stay invested) and a one-tap restart with the same fund and amount will be ready on ${fmtDate(date)}.`;
-    bot(`<b>Restart planned for ${fmtDate(date)}.</b> ${how} We'll remind you that day.<div class="src">(Simulated)</div><div class="actions"><button class="btn" type="button">See restart day</button></div>`)
+    const head = kind === 'checkin' ? `Check-in set for ${fmtDate(date)}.` : `Restart planned for ${fmtDate(date)}.`;
+    const tail = kind === 'checkin' ? "That day I'll ask if money is back on track: you can restart, change the amount, or say not yet." : "We'll remind you that day.";
+    bot(`<b>${head}</b> ${how} ${tail}<div class="src">(Simulated)</div><div class="actions"><button class="btn" type="button">See that day</button></div>`)
       .querySelector('button').onclick = () => { panel.hidden = true; document.body.classList.remove('a-open'); restart(); showTask(null); taskEl.innerHTML = `<div class="t-label">Your plan</div><p class="t-story">This is what you would see on your restart day.</p>`; };
   }
 
