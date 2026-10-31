@@ -1,10 +1,10 @@
 // Serverless function (Vercel, Node 18+). The Anthropic key is read from the
 // ANTHROPIC_API_KEY environment variable and never sent to the browser.
 const { KB, KB_IDS, kbById } = require('../lib/kb');
-const { restartDate, restartDateAfter, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
+const { restartDate, restartDateAfter, todayIST, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
-const PROMPT_VERSION = 'qa-v5'; // v5: conversation memory (last 4 turns), K6 to K8, never mention the knowledge base, two-input planner with check-in. Earlier: v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
+const PROMPT_VERSION = 'qa-v6'; // v6: no explaining or extending facts, strip 'according to the sources', IST dates, settle date = today + N months. v5: conversation memory (last 4 turns), K6 to K8, never mention the knowledge base, two-input planner with check-in. Earlier: v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -71,8 +71,10 @@ Rules:
 - answer: plain, calm English under 80 words. No recommendations, no predictions, no fund names, no percentages, no fear, urgency or loss framing. Do not tell the user what to do; explain how the options work.
 - Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
 - State only what the sources say. Do not add your own inferences or conclusions.
+- Do not explain what a fact means or what follows from it. If a source says "after a skip, your investments continue as usual", say exactly that, not what happens to next month's instalment.
+- Never extend a fact about one thing to a similar thing. If a source says a changed amount applies to all following instalments, do not say the same about a changed date.
 - Keep every qualifier the source gives. If a source says something is one provider's practice, typical, or may happen, say so (for example "one platform also counts skipped instalments"), never state it as a general rule.
-- Never mention "the knowledge base" or "the sources" in the answer text.
+- Never mention "the knowledge base" or "the sources" in the answer text, and never write phrases like "according to the sources" or "based on the information". Just state the fact.
 - If there is an earlier conversation, use it only to understand what the new question refers to (for example "it" or "that"). Answer only the new question, only from the knowledge base.
 - citations: the knowledge base IDs that support every statement in the answer.`;
 
@@ -166,6 +168,8 @@ async function handleQA(message, debug = false, history = []) {
   const cites = [...new Set(qa.citations || [])];
   if (!cites.length || cites.some(c => !KB_IDS.includes(c))) { checks.G1 = 'fail'; return fb('unsure', { stopped_at: 'no valid citation' }); }
   checks.G1 = 'pass';
+  // Remove meta phrases about sources (users see citations separately).
+  qa.answer = String(qa.answer || '').replace(/\b(according to|based on|as per) (the )?(sources?|knowledge base|available information|information provided)\s*,?\s*/gi, '').replace(/^\s*([a-z])/, (m, c) => c.toUpperCase()).replace(/([.!?]\s+)([a-z])/g, (m, p, c) => p + c.toUpperCase());
   if (hasPII(qa.answer)) { checks.G5 = 'fail'; return fb('privacy', { stopped_at: 'PII in answer' }); }
   if (hasAdviceWords(qa.answer)) { checks.G3 = 'fail'; return fb('advice', { stopped_at: 'advice words in answer' }); }
   if (hasPressureWords(qa.answer)) { checks.G4 = 'fail'; return fb('unsure', { stopped_at: 'pressure words in answer' }); }
@@ -196,7 +200,7 @@ async function handlePlan(message, history = []) {
   const day = Number.isInteger(p.payday_day) && p.payday_day >= 1 && p.payday_day <= 31 ? p.payday_day : null;
   if (!day) return { type: 'clarify', ask: 'payday', text: p.question || 'Which day of the month does your money usually arrive by?' };
   if (p.settle_unsure) {
-    const d = restartDate(day);
+    const d = restartDate(day, todayIST());
     return {
       type: 'checkin', payday_day: day, date_iso: iso(d),
       text: `No problem, you don't need to decide now. I'll check in on ${nice(d)}, a few days after your next payday, and you can restart then or check again later. Does that work?`,
@@ -205,7 +209,7 @@ async function handlePlan(message, history = []) {
   }
   const months = Number.isInteger(p.settle_months) ? p.settle_months : 0;
   if (months < 1) return { type: 'clarify', ask: 'settle', payday_day: day, text: SETTLE_Q };
-  const d = restartDateAfter(day, months);
+  const d = restartDateAfter(day, months, todayIST());
   return {
     type: 'plan', payday_day: day, settle_months: months, date_iso: iso(d),
     text: `Your money usually arrives around the ${ordinal(day)}, and you expect things to settle in about ${months} month${months > 1 ? 's' : ''}. A restart date a few days after that payday is ${nice(d)}. Does that work?`,
