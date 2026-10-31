@@ -4,7 +4,7 @@ const { KB, KB_IDS, kbById } = require('../lib/kb');
 const { restartDate, restartDateAfter, todayIST, hasPII, hasAdviceWords, hasPressureWords } = require('../lib/rules');
 
 const MODEL = process.env.MODEL || 'claude-haiku-5-5';
-const PROMPT_VERSION = 'qa-v6'; // v6: no explaining or extending facts, strip 'according to the sources', IST dates, settle date = today + N months. v5: conversation memory (last 4 turns), K6 to K8, never mention the knowledge base, two-input planner with check-in. Earlier: v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
+const PROMPT_VERSION = 'qa-v6.1'; // v6.1: returns or performance questions always count as advice. v6: no explaining or extending facts, strip 'according to the sources', IST dates, settle date = today + N months. v5: conversation memory (last 4 turns), K6 to K8, never mention the knowledge base, two-input planner with check-in. Earlier: v2: judge sees source titles; answer must not name sources. v3: keep qualifiers; judge rejects overstated certainty (too strict, 5/10 factual). v4: judge fails only contradictions, additions or provider-to-general; omissions are fine
 const MAX_INPUT = 500;
 const HELP_URL = 'https://groww.in/help';
 
@@ -66,7 +66,7 @@ ${KB_TEXT}
 
 Rules:
 - in_scope = true only if the question is about skipping, pausing, stopping, restarting or editing a SIP, or about failed SIP instalments.
-- advice_request = true if the user asks what they should do (continue, stop, which fund, how much, whether returns will be good), or asks for predictions.
+- advice_request = true if the user asks what they should do (continue, stop, which fund, how much, whether returns will be good), or asks for predictions. Any question about future returns or how a fund will perform is advice_request = true, even if it is outside SIP controls.
 - answerable = true only if the knowledge base directly answers the question. If it only partly or indirectly relates, answerable = false. Never guess.
 - answer: plain, calm English under 80 words. No recommendations, no predictions, no fund names, no percentages, no fear, urgency or loss framing. Do not tell the user what to do; explain how the options work.
 - Do not name the source, website or organisation in the answer text. Sources are shown to the user separately as citations.
