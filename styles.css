@@ -187,3 +187,7 @@ body.a-open .fab{display:none}
 @media (prefers-reduced-motion:reduce){.s-icon{animation:none}}
 
 .select{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;margin-top:6px}
+
+/* v3: small text button and plain citation */
+.linkbtn{display:block;margin:8px auto 0;border:0;background:none;color:var(--accent);font-weight:600;font-size:14px;text-decoration:underline;padding:4px}
+.msg .cites .cite-plain{font-size:12px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:2px 8px}
