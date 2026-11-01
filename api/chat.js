@@ -214,7 +214,7 @@ async function handlePlan(message, history = []) {
   return {
     type: 'plan', payday_day: day, settle_months: months, date_iso: iso(d),
     text: `Your money usually arrives around the ${ordinal(day)}, and you expect things to settle in about ${months} month${months > 1 ? 's' : ''}. A restart date a few days after that payday is ${nice(d)}. Does that work?`,
-    rule: 'payday in the month things settle + 3 days, moved off weekends'
+    rule: 'first payday after things settle + 3 days, moved off weekends'
   };
 }
 
