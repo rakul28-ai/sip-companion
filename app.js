@@ -109,7 +109,7 @@
         <div class="muted">${SIP.fund}</div>
         <div class="row" style="margin:6px 0 4px"><span class="amount">${fmtINR(SIP.amount)}</span><span>${fmtDate(due)}</span></div>
         <p style="margin:8px 0 2px">Skipping affects only this month, and your SIP continues as usual after that. Lowering changes the amount until you change it back.</p>
-        ${annot(2, 'Skip already exists on the SIP details page, but only if you go looking for it (P2 and the researcher did not know it existed). Here it is offered 3 days before the debit, when it is needed.')}
+        ${annot(2, 'Skip already exists on the SIP details page, but only if you go looking for it. Here it is offered 3 days before the debit, when it is needed.')}
         <button class="btn primary" id="keep">Keep as planned</button>
         <div class="btn-grid" style="margin-top:8px">
           <button class="btn" id="skip" ${blocked ? 'disabled' : ''}>Skip this month</button>
