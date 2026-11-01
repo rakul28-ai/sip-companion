@@ -19,7 +19,7 @@ Every answer passes these checks before it is shown, otherwise a fallback is sho
 - G5 privacy: PAN and account numbers are blocked before reaching the model
 - G6 in scope: out-of-scope questions get a fallback
 
-`eval.html` runs the 20-case golden set from the PRD against the live API.
+`eval.html` runs the 24-case golden set against the live API.
 
 ## Deploy (Vercel)
 1. Import this repository in Vercel.
